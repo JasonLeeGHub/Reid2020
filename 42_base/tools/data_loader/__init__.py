@@ -2,11 +2,11 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 import copy
 import numpy as np
-from reid_dataset import ReIDDataSet
-from loader import UniformSampler, IterLoader, Seeds
-from SYSU_MM01 import SYSU_MM01
-from market1501 import Market1501
-from dukemtmcreid import DukeMTMCreID
+from .reid_dataset import ReIDDataSet
+from .loader import UniformSampler, IterLoader, Seeds
+from .SYSU_MM01 import SYSU_MM01
+from .market1501 import Market1501
+from .dukemtmcreid import DukeMTMCreID
 
 import os.path as pth
 
@@ -14,7 +14,7 @@ import os.path as pth
 
 class Loaders:
 
-    def __init__(self, config, transform_train, transform_test):
+    def __init__(self, config, dataset_name, transform_train, transform_test):
 
         self.__factory = {
             'Market-1501-v15.09.15': 'Market1501(self.dataset_path, True)',
@@ -24,8 +24,7 @@ class Loaders:
 
         #  dataset configuration
         self.dataset_path = config.dataset_path
-        # self.dataset_path = pth.join(config.dataset_path, config.dataset_name)
-        self.dataset_name = config.dataset_name
+        self.dataset_name = dataset_name
         # sample configuration
         self.p_gan = config.p_gan
         self.k_gan = config.k_gan
@@ -109,7 +108,7 @@ class Loaders:
                                                     shuffle=False,
                                                     sampler=UniformSampler(train_dataset, self.k_ide, copy.copy(seeds)),
                                                     num_workers=8, drop_last=True)
-            self.test_loader = data.DataLoader(test_dataset, 128, shuffle=False, num_workers=8, drop_last=False)
+            self.test_loader  = data.DataLoader(test_dataset, 128, shuffle=False, num_workers=8, drop_last=False)
             self.query_loader = data.DataLoader(query_dataset, 128, shuffle=False, num_workers=8, drop_last=False)
 
             # init iters
@@ -118,7 +117,6 @@ class Loaders:
 
 if __name__ == '__main__':
     import argparse
-    import torch
     import matplotlib.pyplot as plt
     import torchvision.transforms as transforms
     import numpy as np
@@ -130,6 +128,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--p_gan', type=int, default=2)
     parser.add_argument('--k_gan', type=int, default=4)
+
     parser.add_argument('--p_ide', type=int, default=4)
     parser.add_argument('--k_ide', type=int, default=4)
 
@@ -141,7 +140,6 @@ if __name__ == '__main__':
         transforms.ToTensor()])
 
     Loader = Loaders(config, transform, transform)
-    # test_batch = Loader.train_iter_ide.next_one()
     real_rgb_images, rgb_pids, _, _ = Loader.train_iter_ide.next_one()
     print(real_rgb_images.size())
     print(rgb_pids)

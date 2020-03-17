@@ -7,19 +7,23 @@ import torch.nn.functional as F
 import torch.optim as optim
 import itertools
 
-from .model import Generator, Discriminator, ConditionalDiscriminator, weights_init_normal, Encoder, Embeder
+from .model import  weights_init_normal, Encoder, Decoder_ir, Decoder_rgb, embeder, Supervize_classifier
 from tools import *
 from .mmd_loss import MMDLoss
 
 
 class Base:
 
-	def __init__(self, config, loaders):
+	def __init__(self, config, loader_source, loader_target):
 
 		self.config = config
 
 		# paths
-		self.loaders = loaders
+		# self.loaders = loaders
+		self.lader_source = loader_source
+		self.loader_target = loader_target
+
+
 		self.save_path = config.save_path
 		self.save_model_path = os.path.join(self.save_path, 'model/')
 		self.save_features_path = os.path.join(self.save_path, 'features/')
@@ -74,70 +78,25 @@ class Base:
 
 	def _init_model(self):
 
-		## the pixel alignment module
-		self.G_rgb2ir = Generator(64, 4)
-		self.D_ir = ConditionalDiscriminator(64)
-		self.D_ir_warmup = Discriminator(128, 64, 4)
-
-		self.G_rgb2ir.apply(weights_init_normal)
-		self.D_ir.apply(weights_init_normal)
-		self.D_ir_warmup.apply(weights_init_normal)
-
-		self.G_rgb2ir = torch.nn.DataParallel(self.G_rgb2ir).to(self.device)
-		self.D_ir = torch.nn.DataParallel(self.D_ir).to(self.device)
-		self.D_ir_warmup = torch.nn.DataParallel(self.D_ir_warmup).to(self.device)
-
-		self.G_ir2rgb = Generator(64, 4)
-		self.D_rgb = Discriminator(128, 64, 4)
-		self.D_rgb_warmup = Discriminator(128, 64, 4)
-
-		self.G_ir2rgb.apply(weights_init_normal)
-		self.D_rgb.apply(weights_init_normal)
-		self.D_rgb_warmup.apply(weights_init_normal)
-
-		self.G_ir2rgb = torch.nn.DataParallel(self.G_ir2rgb).to(self.device)
-		self.D_rgb = torch.nn.DataParallel(self.D_rgb).to(self.device)
-		self.D_rgb_warmup = torch.nn.DataParallel(self.D_rgb_warmup).to(self.device)
-
 
 		## the feature alignment module
 		encoder = Encoder()
-		embeder = Embeder(1, self.class_num)
+		decoder_rgb = Decoder_rgb()
+		decoder_ir = Decoder_ir()
+		classifier_sup = Supervize_classifier(self.class_num)
+		embed = embeder()
+		self.classifier_source = torch.nn.DataParallel(classifier_sup).to(self.device)
+		self.embeder = torch.nn.DataParallel(embed).to(self.device)
 		self.encoder = torch.nn.DataParallel(encoder).to(self.device)
-		self.embeder = torch.nn.DataParallel(embeder).to(self.device)
-
-		## Restore the pixel alignment module, if the pre-trained model is existed
-		if self.G_rgb2ir_restore_path is not 'None':
-			self.G_rgb2ir.load_state_dict(torch.load(self.G_rgb2ir_restore_path))
-			print('Note: Successfully resume G_rgb2ir from {}'.format(self.G_rgb2ir_restore_path))
-		if self.G_ir2rgb_restore_path is not 'None':
-			self.G_ir2rgb.load_state_dict(torch.load(self.G_ir2rgb_restore_path))
-			print('Note: Successfully resume G_ir2rgb from {}'.format(self.G_ir2rgb_restore_path))
-		if self.D_ir_restore_path is not 'None':
-			self.D_ir.load_state_dict(torch.load(self.D_ir_restore_path))
-			print('Note: Successfully resume D_ir from {}'.format(self.D_ir_restore_path))
-		if self.D_rgb_restore_path is not 'None':
-			self.D_rgb.load_state_dict(torch.load(self.D_rgb_restore_path))
-			print('Note: Successfully resume D_rgb from {}'.format(self.D_rgb_restore_path))
-
-
-		## restore the feature alignment module, if the pre-trained model is existed
-		if self.encoder_restore_path is not 'None':
-			self.encoder.load_state_dict(torch.load(self.encoder_restore_path))
-			print('Note: Successfully resume generator from {}'.format(self.encoder_restore_path))
-		if self.embeder_restore_path is not 'None':
-			self.embeder.load_state_dict(torch.load(self.embeder_restore_path))
-			print('Note: Successfully resume generator from {}'.format(self.embeder_restore_path))
+		self.decoder_rgb = torch.nn.DataParallel(decoder_rgb).to(self.device)
+		self.decoder_ir = torch.nn.DataParallel(decoder_ir).to(self.device)
 
 		## we add all models to a list for esay using, such as train, test, save and restore
 		self.model_list = []
-		self.model_list.append(self.G_rgb2ir)
-		self.model_list.append(self.G_ir2rgb)
-		self.model_list.append(self.D_rgb)
-		self.model_list.append(self.D_ir)
-		self.model_list.append(self.D_rgb_warmup)
-		self.model_list.append(self.D_ir_warmup)
 		self.model_list.append(self.encoder)
+		self.model_list.append(self.decoder_rgb)
+		self.model_list.append(self.decoder_ir)
+		self.model_list.append(self.classifier_source)
 		self.model_list.append(self.embeder)
 
 
@@ -145,64 +104,62 @@ class Base:
 	def _init_criterions(self):
 		# of the pixel alignment module
 		self.criterion_gan_mse = torch.nn.MSELoss()
-		self.criterion_gan_cycle = torch.nn.L1Loss()
-		self.criterion_gan_identity = torch.nn.L1Loss()
+		self.criterion_identity = torch.nn.L1Loss()
 		self.ones = torch.ones([self.config.p_gan*self.config.k_gan, 1, 4, 4]).float().to(self.device)
 		self.zeros = torch.zeros([self.config.p_gan*self.config.k_gan, 1, 4, 4]).float().to(self.device)
 
 		# of the feature alignment module
 		self.criterion_ide_cls = nn.CrossEntropyLoss()
-		self.criterion_gan_triplet = TripletLoss(self.margin, self.soft_bh, 'cosine')
+		self.criterion_gan_triplet = TripletLoss(self.margin)
 
 
-	def compute_classification_loss(self, logits_list, pids):
-		logits_avg = 0
-		loss_avg = 0
-		for i in range(self.part_num):
-			logits_i = logits_list[i]
-			logits_avg += 1.0 / float(self.part_num) * logits_i
-			loss_i = self.criterion_ide_cls(logits_i, pids)
-			loss_avg += 1.0 / float(self.part_num) * loss_i
-		acc = accuracy(logits_avg, pids, (1, 5))
-		return acc, loss_avg
+	def compute_classification_loss(self, logits, pids):
+		loss_i = self.criterion_ide_cls(logits, pids)
+		acc = accuracy(logits, pids, (1, 5))
+		return acc, loss_i
+
+	def compute_classification_loss_2(self, logits, pids):
+		loss_i = self.criterion_ide_cls(logits, pids)
+		return loss_i
+
+	# def compute_classification_loss(self, logits_list, pids):
+	# 	logits_avg = 0
+	# 	loss_avg = 0
+	# 	for i in range(self.part_num):
+	# 		logits_i = logits_list[i]
+	# 		logits_avg += 1.0 / float(self.part_num) * logits_i
+	# 		loss_i = self.criterion_ide_cls(logits_i, pids)
+	# 		loss_avg += 1.0 / float(self.part_num) * loss_i
+	# 	acc = accuracy(logits_avg, pids, (1, 5))
+	# 	return acc, loss_avg
 
 
-	def compute_triplet_loss(self, embedding1_list, embedding2_list, embedding3_list, pids1, pids2, pids3):
-		loss_avg = 0
-		for i in range(self.part_num):
-			embbedding1_i = embedding1_list[i]
-			embbedding2_i = embedding2_list[i]
-			embbedding3_i = embedding3_list[i]
-			loss_i = self.criterion_gan_triplet(embbedding1_i, embbedding2_i, embbedding3_i, pids1, pids2, pids3)
-			loss_avg += 1.0 / float(self.part_num) * loss_i
-		return loss_avg
+	def compute_triplet_loss(self, embbedding1, pids1):
+
+		loss = self.criterion_gan_triplet(embbedding1, pids1)
+		return loss
 
 
 	def _init_optimizer(self):
 
-		## of the pixel alignment module
-		self.G_optimizer = optim.Adam(itertools.chain(self.G_ir2rgb.parameters(), self.G_rgb2ir.parameters()), lr=self.base_pixel_learning_rate, betas=[0.5, 0.999])
-		self.D_rgb_optimizer = optim.Adam(itertools.chain(self.D_rgb.parameters(), self.D_rgb_warmup.parameters()), lr=self.base_pixel_learning_rate, betas=[0.5, 0.999])
-		self.D_ir_optimizer = optim.Adam(itertools.chain(self.D_ir.parameters(), self.D_ir_warmup.parameters()), lr=self.base_pixel_learning_rate, betas=[0.5, 0.999])
-
-		self.G_lr_decay = optim.lr_scheduler.MultiStepLR(self.G_optimizer, self.milestones, gamma=0.1)
-		self.D_rgb_lr_decay = optim.lr_scheduler.MultiStepLR(self.D_rgb_optimizer, self.milestones, gamma=0.1)
-		self.D_ir_lr_decay = optim.lr_scheduler.MultiStepLR(self.D_ir_optimizer, self.milestones, gamma=0.1)
 
 		## of the feature alignment module
-		params = [{'params': self.encoder.parameters(), 'lr': 0.1 * self.base_feature_ide_learning_rate},
-				  {'params': self.embeder.parameters(), 'lr': self.base_feature_ide_learning_rate}]
+		params = [{'params': self.encoder.parameters(), 'lr':  self.base_feature_ide_learning_rate},
+				  {'params': self.decoder_ir.parameters(), 'lr': self.base_feature_ide_learning_rate},
+				  {'params': self.decoder_rgb.parameters(), 'lr': self.base_feature_ide_learning_rate}]
 		self.ide_optimizer = optim.SGD(params=params, weight_decay=5e-4, momentum=0.9, nesterov=True)
 		self.ide_lr_scheduler = optim.lr_scheduler.MultiStepLR(self.ide_optimizer, self.milestones, gamma=0.1)
 
 
 	def _init_fixed_values(self): # for generating fake images
 
-		self.fixed_real_rgb_images, _, _, _ = self.loaders.rgb_train_iter_ide.next_one()
-		self.fixed_real_ir_images, _, _, _ = self.loaders.ir_train_iter_ide.next_one()
+		self.fixed_sysu_rgb_images, _, _, _ = self.loader_target.rgb_train_iter_ide.next_one()
+		self.fixed_sysu_ir_images, _, _, _ = self.loader_target.ir_train_iter_ide.next_one()
 
-		self.fixed_real_rgb_images = self.fixed_real_rgb_images.to(self.device)
-		self.fixed_real_ir_images = self.fixed_real_ir_images.to(self.device)
+		self.fixed_source_images,_,_,_ = self.lader_source.train_iter_ide.next_one()
+		self.fixed_source_images = self.fixed_source_images.to(self.device)
+		self.fixed_real_rgb_images = self.fixed_sysu_rgb_images.to(self.device)
+		self.fixed_real_ir_images = self.fixed_sysu_ir_images.to(self.device)
 
 
 
@@ -218,18 +175,6 @@ class Base:
 		if not on_gpu:
 			images = images.to(self.device)
 
-		# resize to [384, 192] for ide input
-		# images = F.interpolate(images, [384, 192], mode='bilinear')
-
-		# normalize to [0, 1]
-		# images = (images + 1.0) / 2.0
-
-		# normalize to resnet input
-		# mean = [0.485, 0.456, 0.406]
-		# std = [0.229, 0.224, 0.225]
-		# mean = torch.tensor(mean).view([1, 3, 1, 1]).repeat([images.size(0), 1, images.size(2), images.size(3)]).to(self.device)
-		# std = torch.tensor(std).view([1, 3, 1, 1]).repeat([images.size(0), 1, images.size(2), images.size(3)]).to(self.device)
-		# images = (images - mean) / std
 
 		if not to_gpu:
 			images = images.cpu()
@@ -247,9 +192,6 @@ class Base:
 
 
 	def lr_decay(self, current_step):
-		self.G_lr_decay.step(current_step)
-		self.D_rgb_lr_decay.step(current_step)
-		self.D_ir_lr_decay.step(current_step)
 		self.ide_lr_scheduler.step(current_step)
 
 

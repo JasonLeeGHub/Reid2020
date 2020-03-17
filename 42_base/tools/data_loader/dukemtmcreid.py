@@ -11,7 +11,7 @@ import zipfile
 
 import os.path as osp
 
-from bases import BaseImageDataset
+from .bases import BaseImageDataset
 
 
 class DukeMTMCreID(BaseImageDataset):

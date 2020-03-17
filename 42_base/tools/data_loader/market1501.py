@@ -9,7 +9,7 @@ import re
 
 import os.path as osp
 
-from bases import BaseImageDataset
+from .bases import BaseImageDataset
 
 
 class Market1501(BaseImageDataset):

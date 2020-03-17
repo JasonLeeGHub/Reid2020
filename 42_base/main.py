@@ -32,11 +32,11 @@ def main(config):
 		transforms.Grayscale(num_output_channels=3),
 		transforms.ToTensor(),
 		transforms.Normalize(mean=[0, 0, 0], std=[1, 1, 1])])
-	loaders = Loaders(config, transform_train, transform_test)
-
+	loader_source = Loaders(config, config.source_dataset_name, transform_train, transform_test)
+	loader_target = Loaders(config, config.target_dataset_name, transform_train, transform_test)
 
 	# base
-	base = Base(config, loaders)
+	base = Base(config, loader_source, loader_target)
 
 
 	# logger
@@ -81,19 +81,19 @@ def main(config):
 			base.save_model(current_step)
 
 			# evaluate reid
-			if (current_step)%10 ==0:
+			if (current_step+1)%10 ==0:
 				logger('**********' * 10 + 'evaluate' + '**********' * 10)
-				results = test(config, base, loaders, True)
+				results = test(config, base, loader_target, True)
 				for key in list(results.keys()):
 					logger('Time: {}, {}, {}'.format(time_now(), key, results[key]))
 				logger('')
 			logger('**********'*10 + 'train' + '**********'*10 )
-			ide_titles, ide_values = train_a_step(config, base, loaders, current_step)
+			ide_titles, ide_values = train_a_step(config, base, loader_source, loader_target, current_step)
 			logger('Time: {};  Step: {};  {}'.format(time_now(), current_step, analyze_names_and_meter(ide_titles, ide_values)))
 			logger('')
 
 		logger('**********' * 10 + 'final test' + '**********' * 10)
-		results = test(config, base, loaders, False)
+		results = test(config, base, loader_target, False)
 		for key in list(results.keys()):
 			logger('Time: {}, {}, {}'.format(time_now(), key, results[key]))
 		logger('')
@@ -121,12 +121,17 @@ if __name__ == '__main__':
 	# output configuration
 	parser.add_argument('--save_path', type=str, default='out/base/', help='path to save models, logs, images')
 	# dataset configuration
-	parser.add_argument('--dataset_path', type=str, default='/Extra/dataset/SYSU-MM01/')
+	parser.add_argument('--dataset_path', type=str,
+						default='/home/jingxiongli/PycharmProjects/AlignGAN/42_base/42_base/tools/datasets')
+	parser.add_argument('--source_dataset_name', type=str,
+						default='DukeMTMC-reID')  # Market-1501-v15.09.15, DukeMTMC-reID, sysu
+	parser.add_argument('--target_dataset_name', type=str,
+						default='sysu')  # Market-1501-v15.09.15, DukeMTMC-reID, sysu
 	parser.add_argument('--p_gan', type=int, default=4, help='person numbers for pixel alignment module')
 	parser.add_argument('--k_gan', type=int, default=4, help='images numbers of a person for pixel alignment module')
-	parser.add_argument('--p_ide', type=int, default=12, help='person numbers for feature alignment module')
+	parser.add_argument('--p_ide', type=int, default=4, help='person numbers for feature alignment module')
 	parser.add_argument('--k_ide', type=int, default=4, help='image numbers of a person for feature alignment module')
-	parser.add_argument('--class_num', type=int, default=395, help='identity numbers in training set')
+	parser.add_argument('--class_num', type=int, default=702, help='identity numbers in training set')
 	parser.add_argument('--image_size', type=int, default=[384, 192], help='image size for pixel alignment module,. in feature alignment module, images will be automatically reshaped to 384*192')
 
 	# restore configuration, used for debug, please don't change them

@@ -1,7 +1,7 @@
 
 import os.path as osp
 import os
-from bases import BaseImageDataset
+from .bases import BaseImageDataset
 import copy
 
 
@@ -90,6 +90,7 @@ class SYSU_MM01(BaseImageDataset):
             self.ir_samples_train = self._reorder(self.ir_samples_train, 1)
             print('Note: Pids training and valation set are re-ordered separtely')
 
+        # when testing, all ir samples are query, rgb are gallery
         print('rgb_samples_train', self._anaplsis_samples(self.rgb_samples_train))
         print('ir_samples_train', self._anaplsis_samples(self.ir_samples_train))
         print('rgb_samples_test', self._anaplsis_samples(self.rgb_samples_test))
