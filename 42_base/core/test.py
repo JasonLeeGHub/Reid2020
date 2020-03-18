@@ -37,14 +37,18 @@ def compute_and_save_features(base, loaders):
 		# images_f = fliplr(images)
 		images = images.to(base.device)
 		# images_f = images_f.to(base.device)
-		features = base.encoder(base.process_images_4_encoder(images, True, True))
+		_, ir_features,_ = base.encoder(base.process_images_4_encoder(images, True, True),
+							    base.process_images_4_encoder(images, True, True),
+								base.process_images_4_encoder(images, True, True))
+		ir_features = ir_features[0]
+		ir_features = base.embeder(ir_features)
 		# features_f = base.encoder(base.process_images_4_encoder(images_f, True, True))
-		features, _, _, _ = base.embeder(features)
+		# features, _, _, _ = base.embeder(features)
 		# features_f, _, _, _ = base.embeder(features_f)
 		# features = features + features_f
 		if base.part_num == 1:
-			features = torch.unsqueeze(features, -1)
-		return features
+			ir_features = torch.unsqueeze(features, -1)
+		return ir_features
 
 	def normalize_and_resize_feature(features):
 		# normlize

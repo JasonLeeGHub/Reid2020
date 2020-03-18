@@ -37,7 +37,9 @@ def train_feature_module_a_iter(config, base, source_loader, sysu_loader):
 	### ide
 	## forward
 	# encoder
-	sysu_rgb_results, sysu_ir_results, source_rgb_results = base.encoder(sysu_rgb_images, sysu_ir_images, source_rgb_images)
+	sysu_rgb_results, sysu_ir_results, source_rgb_results = base.encoder(base.process_images_4_encoder(sysu_rgb_images, True, True),
+																		 base.process_images_4_encoder(sysu_ir_images, True, True),
+																		 base.process_images_4_encoder(source_rgb_images, True, True))
 	sysu_rgb_features_all = torch.add(sysu_rgb_results[0], sysu_rgb_results[1])
 	sysu_ir_features_all = torch.add(sysu_ir_results[0], sysu_ir_results[1])
 	source_rgb_features_all = torch.add(source_rgb_results[0], source_rgb_results[1])
