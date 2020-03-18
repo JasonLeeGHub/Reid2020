@@ -37,18 +37,19 @@ def compute_and_save_features(base, loaders):
 		# images_f = fliplr(images)
 		images = images.to(base.device)
 		# images_f = images_f.to(base.device)
-		_, ir_features,_ = base.encoder(base.process_images_4_encoder(images, True, True),
+		features_rgb, features_ir,_ = base.encoder(base.process_images_4_encoder(images, True, True),
 							    base.process_images_4_encoder(images, True, True),
 								base.process_images_4_encoder(images, True, True))
-		ir_features = ir_features[0]
-		ir_features = base.embeder(ir_features)
+		features_rgb = base.embeder(features_rgb[0])
+		features_ir = base.embeder(features_ir[0])
 		# features_f = base.encoder(base.process_images_4_encoder(images_f, True, True))
 		# features, _, _, _ = base.embeder(features)
 		# features_f, _, _, _ = base.embeder(features_f)
 		# features = features + features_f
 		if base.part_num == 1:
-			ir_features = torch.unsqueeze(features, -1)
-		return ir_features
+			features_rgb = torch.unsqueeze(features, -1)
+			features_ir = torch.unsqueeze(features, -1)
+		return features_rgb, features_ir
 
 	def normalize_and_resize_feature(features):
 		# normlize
@@ -85,7 +86,7 @@ def compute_and_save_features(base, loaders):
 			images, pids, cids, _ = data
 			#images = base.G_rgb2ir(images.to(base.device)).data.cpu()
 			# forward
-			features = compute_features(images)
+			features, _ = compute_features(images)
 			# meter
 			features_meter.update(features.data)
 			pids_meter.update(pids.data)
@@ -95,7 +96,7 @@ def compute_and_save_features(base, loaders):
 			# load data
 			images, pids, cids, _ = data
 			# forward
-			features = compute_features(images)
+			_, features = compute_features(images)
 			# meter
 			features_meter.update(features.data)
 			pids_meter.update(pids.data)
